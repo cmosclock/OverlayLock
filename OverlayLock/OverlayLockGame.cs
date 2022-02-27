@@ -22,7 +22,7 @@ namespace OverlayLock
 {
     public class OverlayLockGame : Game
     {
-        private HWND _targetHwnd = Process.GetProcessesByName("Discord").First().MainWindowHandle;
+        private HWND _targetHwnd;
         private TimeSpan _afkTime = TimeSpan.FromSeconds(2);
 
         private GraphicsDeviceManager _graphics;
@@ -46,6 +46,7 @@ namespace OverlayLock
         private KawazuConverter _kawazu;
         private string _currentPhraseRomaji = "";
         private List<Dictionary<string, string>> _wordList;
+        private User32.HWINEVENTHOOK _winEventHook;
 
         private string GetCurrentPhraseRomaji()
         {
@@ -80,21 +81,11 @@ namespace OverlayLock
             Utils.MakeFullScreenOverlay(Window.Handle, true);
 
             _graphics.ApplyChanges();
-            
-            _targetMovedProc = TargetMoved;
-            var threadId = User32.GetWindowThreadProcessId(_targetHwnd, out var processId);
-            User32.SetWinEventHook(
-                User32.EventConstants.EVENT_SYSTEM_FOREGROUND,
-                User32.EventConstants.EVENT_OBJECT_LOCATIONCHANGE,
-                IntPtr.Zero,
-                _targetMovedProc,
-                processId,
-                threadId,
-                User32.WINEVENT.WINEVENT_INCONTEXT | User32.WINEVENT.WINEVENT_SKIPOWNPROCESS);
-            
+
             // game logic
             gameForm.MouseDoubleClick += (object? sender, MouseEventArgs args) =>
             {
+                if (_targetHwnd == HWND.NULL) return;
                 if ((args.Button & MouseButtons.Left) != 0)
                 {
                     var windowplacement = new User32.WINDOWPLACEMENT();
@@ -129,10 +120,41 @@ namespace OverlayLock
                     }
                 }
             };
+            
+            // process timer
+            _targetMovedProc = TargetMoved;
+            var timer = new Timer();
+            timer.Interval = 1000;
+            timer.Tick += (sender, args) =>
+            {
+                if (_targetHwnd == HWND.NULL || !User32.IsWindow(_targetHwnd))
+                {
+                    if (_targetHwnd == HWND.NULL && Process.GetProcessesByName("Discord").FirstOrDefault() is {} process && process.MainWindowHandle != HWND.NULL)
+                    {
+                        _targetHwnd = process.MainWindowHandle;
+                        var threadId = User32.GetWindowThreadProcessId(_targetHwnd, out var processId);
+                        User32.UnhookWinEvent(_winEventHook);
+                        _winEventHook = User32.SetWinEventHook(
+                            User32.EventConstants.EVENT_SYSTEM_FOREGROUND,
+                            User32.EventConstants.EVENT_OBJECT_LOCATIONCHANGE,
+                            IntPtr.Zero,
+                            _targetMovedProc,
+                            processId,
+                            threadId,
+                            User32.WINEVENT.WINEVENT_INCONTEXT | User32.WINEVENT.WINEVENT_SKIPOWNPROCESS);
+                    }
+                    else
+                    {
+                        _targetHwnd = HWND.NULL;
+                    }
+                }
+            };
+            timer.Start();
         }
 
         public void TargetMoved(User32.HWINEVENTHOOK hwineventhook, uint eventType, HWND hwnd, int idObject, int idChild, uint dwEventThread, uint dwmsEventTime)
         {
+            if (_targetHwnd == HWND.NULL) return;
             switch (eventType)
             {
                 case User32.EventConstants.EVENT_SYSTEM_MOVESIZESTART:
@@ -200,51 +222,51 @@ namespace OverlayLock
             if (GamePad.GetState(PlayerIndex.One).Buttons.Back == ButtonState.Pressed || Keyboard.GetState().IsKeyDown(Keys.Escape))
                 Exit();
 
-            if (DateTime.UtcNow - _lastActive > _afkTime && !_locked)
+            if (_targetHwnd != HWND.NULL)
             {
-                User32.GetWindowRect(_targetHwnd, out var targetRect);
-                TargetRect = targetRect;
-
-                _currentAttemptRomaji = "";
-                _currentPhraseEntry = _wordList.ElementAt(new Random().Next(0, _wordList.Count - 1));
-                _currentPhraseRomaji = GetCurrentPhraseRomaji();
-                _locked = true;
-                _gameForm.Show();
-            }
-
-            if (_locked)
-            {
-                var mouse = Mouse.GetState();
-                var mouseGlobal = Cursor.Position;
-                if (mouseGlobal.X > TargetRect.left
-                    && mouseGlobal.X < TargetRect.right
-                    && mouseGlobal.Y > TargetRect.top
-                    && mouseGlobal.Y < TargetRect.bottom
-                    && mouse.LeftButton == ButtonState.Pressed
-                    && !_dragging
-                    && !_resizing)
-                {
-                    _dragging = true;
-                    _dragOffsets = new Vector2(TargetRect.X - mouseGlobal.X, TargetRect.Y - mouseGlobal.Y);
-                }
-                if (_dragging && (mouse.LeftButton != ButtonState.Pressed || _resizing))
-                {
-                    _dragging = false;
-                    _dragOffsets = Vector2.Zero;
-                }
-                if (_dragging && !_resizing)
+                if (DateTime.UtcNow - _lastActive > _afkTime && !_locked)
                 {
                     User32.GetWindowRect(_targetHwnd, out var targetRect);
-                    User32.MoveWindow(_targetHwnd,
-                        (int)(mouseGlobal.X + _dragOffsets.X),
-                        (int)(mouseGlobal.Y + _dragOffsets.Y),
-                        targetRect.Width,
-                        targetRect.Height,
-                        true);
+                    TargetRect = targetRect;
+
+                    _currentAttemptRomaji = "";
+                    _currentPhraseEntry = _wordList.ElementAt(new Random().Next(0, _wordList.Count - 1));
+                    _currentPhraseRomaji = GetCurrentPhraseRomaji();
+                    _locked = true;
+                    _gameForm.Show();
                 }
-                
-                if (!_targetHwnd.IsNull)
+
+                if (_locked)
                 {
+                    var mouse = Mouse.GetState();
+                    var mouseGlobal = Cursor.Position;
+                    if (mouseGlobal.X > TargetRect.left
+                        && mouseGlobal.X < TargetRect.right
+                        && mouseGlobal.Y > TargetRect.top
+                        && mouseGlobal.Y < TargetRect.bottom
+                        && mouse.LeftButton == ButtonState.Pressed
+                        && !_dragging
+                        && !_resizing)
+                    {
+                        _dragging = true;
+                        _dragOffsets = new Vector2(TargetRect.X - mouseGlobal.X, TargetRect.Y - mouseGlobal.Y);
+                    }
+                    if (_dragging && (mouse.LeftButton != ButtonState.Pressed || _resizing))
+                    {
+                        _dragging = false;
+                        _dragOffsets = Vector2.Zero;
+                    }
+                    if (_dragging && !_resizing)
+                    {
+                        User32.GetWindowRect(_targetHwnd, out var targetRect);
+                        User32.MoveWindow(_targetHwnd,
+                            (int)(mouseGlobal.X + _dragOffsets.X),
+                            (int)(mouseGlobal.Y + _dragOffsets.Y),
+                            targetRect.Width,
+                            targetRect.Height,
+                            true);
+                    }
+                    
                     var renderRect = new RECT
                     {
                         X = (LastRenderedRect.X + TargetRect.X) / 2,
@@ -263,8 +285,19 @@ namespace OverlayLock
                             | User32.SetWindowPosFlags.SWP_NOSIZE
                             | 0);
                     }
+                    // maximize / minimize accordingly
+                    var isTargetVisible = User32.IsWindowVisible(_targetHwnd);
+                    if (!isTargetVisible && _gameForm.Visible)
+                    {
+                        _gameForm.Hide();
+                    }
+                    else if (isTargetVisible && !_gameForm.Visible)
+                    {
+                        _gameForm.Show();
+                    }
                 }
             }
+            
             base.Update(gameTime);
         }
 
