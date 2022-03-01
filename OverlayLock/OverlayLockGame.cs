@@ -246,7 +246,8 @@ namespace OverlayLock
                         && mouseGlobal.Y < TargetRect.bottom
                         && mouse.LeftButton == ButtonState.Pressed
                         && !_dragging
-                        && !_resizing)
+                        && !_resizing
+                        && Form.ActiveForm == _gameForm)
                     {
                         _dragging = true;
                         _dragOffsets = new Vector2(TargetRect.X - mouseGlobal.X, TargetRect.Y - mouseGlobal.Y);
