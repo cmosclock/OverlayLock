@@ -219,9 +219,6 @@ namespace OverlayLock
 
         protected override void Update(GameTime gameTime)
         {
-            if (GamePad.GetState(PlayerIndex.One).Buttons.Back == ButtonState.Pressed || Keyboard.GetState().IsKeyDown(Keys.Escape))
-                Exit();
-
             if (_targetHwnd != HWND.NULL)
             {
                 if (DateTime.UtcNow - _lastActive > _afkTime && !_locked)
