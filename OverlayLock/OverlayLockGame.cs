@@ -42,7 +42,6 @@ namespace OverlayLock
         private SpriteFont _font;
         private Dictionary<string, string>? _currentPhraseEntry;
         private string _currentAttemptRomaji = "";
-        private IntPtr _hwnd;
         private KawazuConverter _kawazu;
         private string _currentPhraseRomaji = "";
         private List<Dictionary<string, string>> _wordList;
@@ -175,7 +174,7 @@ namespace OverlayLock
                     }
                     if (eventType == User32.EventConstants.EVENT_SYSTEM_FOREGROUND && _locked && !_dragging)
                     {
-                        User32.SetForegroundWindow(_hwnd);
+                        User32.SetForegroundWindow(Window.Handle);
                     }
 
                     _lastActive = DateTime.UtcNow;
@@ -200,7 +199,6 @@ namespace OverlayLock
             };
 
             _kawazu = new KawazuConverter();
-            _hwnd = Window.Handle;
             base.Initialize();
         }
 
