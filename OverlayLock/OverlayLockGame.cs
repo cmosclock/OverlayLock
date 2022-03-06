@@ -23,7 +23,7 @@ namespace OverlayLock
     public class OverlayLockGame : Game
     {
         private HWND _targetHwnd;
-        private TimeSpan _afkTime = TimeSpan.FromSeconds(2);
+        private TimeSpan _afkTime = TimeSpan.FromSeconds(60);
 
         private GraphicsDeviceManager _graphics;
         private SpriteBatch _spriteBatch;
